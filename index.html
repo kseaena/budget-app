@@ -1,0 +1,733 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#e8879c" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Budget Cat" />
+  <link rel="manifest" href="./manifest.json" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🐱</text></svg>" />
+  <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect fill='%23FFF0F5' width='100' height='100' rx='20'/><text y='68' x='50' text-anchor='middle' font-size='60'>🐱</text></svg>" />
+  <title>Budget Cat</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Comfortaa:wght@400;600;700&family=Quicksand:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    @keyframes floatUp {
+      0% { transform: translateY(0) rotate(0deg); opacity: 0; }
+      8% { opacity: 1; }
+      85% { opacity: 1; }
+      100% { transform: translateY(-105vh) rotate(20deg); opacity: 0; }
+    }
+    @keyframes fadeInDown {
+      from { opacity: 0; transform: translate(-50%, -20px); }
+      to { opacity: 1; transform: translate(-50%, 0); }
+    }
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.15); }
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body, #root { height: 100%; width: 100%; overflow: hidden; }
+    body { font-family: 'Quicksand', sans-serif; }
+    input, select, button { font-family: 'Quicksand', sans-serif; }
+    select {
+      appearance: none; -webkit-appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23b8a9c9' stroke-width='2' fill='none'/%3E%3C/svg%3E");
+      background-repeat: no-repeat; background-position: right 14px center;
+      padding-right: 36px !important;
+    }
+    input[type="date"]::-webkit-calendar-picker-indicator {
+      filter: invert(.5) sepia(1) saturate(3) hue-rotate(290deg); cursor: pointer;
+    }
+    input::-webkit-outer-spin-button,
+    input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+  </style>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/htm@3/dist/htm.js" crossorigin></script>
+</head>
+<body>
+<div id="root"></div>
+<script>
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("./sw.js").catch(function(){});
+}
+</script>
+<script type="module">
+  /* ───── htm binding ───── */
+  var html = htm.bind(React.createElement);
+  var useState = React.useState;
+  var useEffect = React.useEffect;
+  var useCallback = React.useCallback;
+  var useRef = React.useRef;
+  var SPREADSHEET_ID = "11aTr8ZMv0RjHORAFBSDGvpwuXu8zx0Ta8l_QDMhQEFY";
+  var CLIENT_ID = "837302269270-qgbc9ji25q0jgcd5usnsob0ls1kdhqpa.apps.googleusercontent.com";
+  var SCOPES = "https://www.googleapis.com/auth/spreadsheets";
+  var SHEETS_API = "https://sheets.googleapis.com/v4/spreadsheets/" + SPREADSHEET_ID;
+
+  /* ───── helpers ───── */
+  function today() { return new Date().toISOString().slice(0, 10); }
+
+  function fmtDate(iso) {
+    if (!iso) return "";
+    var p = iso.split("-");
+    return p[2] + "." + p[1] + "." + p[0];
+  }
+
+  function fmtMoney(n) {
+    return Number(n).toLocaleString("ru-RU", { style: "currency", currency: "RUB", minimumFractionDigits: 2 });
+  }
+
+  function parseRuDate(s) {
+    if (!s) return "";
+    if (s.indexOf("-") !== -1) return s;
+    var p = s.split(".");
+    if (p.length === 3) return p[2] + "-" + p[1].padStart(2, "0") + "-" + p[0].padStart(2, "0");
+    return s;
+  }
+
+  /* ───── Token Manager (module-level) ───── */
+  var tokenManager = {
+    token: null,
+    _client: null,
+    _setToken: null,
+    _refreshPromise: null,
+
+    refresh: function() {
+      var self = this;
+      if (self._refreshPromise) return self._refreshPromise;
+      self._refreshPromise = new Promise(function(resolve, reject) {
+        if (!self._client) { reject(new Error("Сессия истекла, войдите снова")); return; }
+        // GSI will call the callback we set during init
+        self._onRefresh = function(newToken) { resolve(newToken); };
+        self._onRefreshError = function(err) { reject(err); };
+        self._client.requestAccessToken({ prompt: "" }); // prompt:"" = silent if session alive
+      }).then(function(newToken) {
+        self._refreshPromise = null;
+        return newToken;
+      }).catch(function(err) {
+        self._refreshPromise = null;
+        throw err;
+      });
+      return self._refreshPromise;
+    },
+
+    // fetch with auto-retry on 401
+    fetch: function(url, opts) {
+      var self = this;
+      opts = opts || {};
+      opts.headers = opts.headers || {};
+      opts.headers["Authorization"] = "Bearer " + self.token;
+      return fetch(url, opts).then(function(res) {
+        if (res.status === 401) {
+          return self.refresh().then(function(newToken) {
+            opts.headers["Authorization"] = "Bearer " + newToken;
+            return fetch(url, opts);
+          });
+        }
+        return res;
+      });
+    }
+  };
+
+  /* ───── Google Auth ───── */
+  function useGoogleAuth() {
+    var _token = useState(null), token = _token[0], setToken = _token[1];
+    var _profile = useState(null), profile = _profile[0], setProfile = _profile[1];
+    var _ready = useState(false), ready = _ready[0], setReady = _ready[1];
+    var _error = useState(null), error = _error[0], setError = _error[1];
+    var clientRef = useRef(null);
+
+    useEffect(function() {
+      var script = document.createElement("script");
+      script.src = "https://accounts.google.com/gsi/client";
+      script.async = true;
+      script.onload = function() {
+        try {
+          var client = window.google.accounts.oauth2.initTokenClient({
+            client_id: CLIENT_ID,
+            scope: SCOPES + " https://www.googleapis.com/auth/userinfo.profile",
+            callback: function(resp) {
+              if (resp.error) {
+                setError(resp.error);
+                if (tokenManager._onRefreshError) { tokenManager._onRefreshError(new Error(resp.error)); tokenManager._onRefreshError = null; }
+                return;
+              }
+              setToken(resp.access_token);
+              tokenManager.token = resp.access_token;
+              if (tokenManager._onRefresh) { tokenManager._onRefresh(resp.access_token); tokenManager._onRefresh = null; }
+              fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
+                headers: { Authorization: "Bearer " + resp.access_token },
+              }).then(function(r) { return r.json(); }).then(function(p) { setProfile(p); }).catch(function(){});
+            },
+          });
+          clientRef.current = client;
+          tokenManager._client = client;
+          setReady(true);
+        } catch(e) { setError("GSI init failed"); }
+      };
+      script.onerror = function() { setError("Failed to load Google auth"); };
+      document.head.appendChild(script);
+      return function() { try { script.remove(); } catch(e) {} };
+    }, []);
+
+    var login = useCallback(function() {
+      if (clientRef.current) clientRef.current.requestAccessToken();
+    }, []);
+
+    return { token: token, profile: profile, ready: ready, error: error, login: login };
+  }
+
+  /* ───── Sheets helpers ───── */
+  function sheetsGet(range) {
+    var url = SHEETS_API + "/values/" + encodeURIComponent(range);
+    return tokenManager.fetch(url)
+      .then(function(res) { if (!res.ok) throw new Error("Sheets GET " + res.status); return res.json(); })
+      .then(function(data) { return data.values || []; });
+  }
+
+  function sheetsWrite(startCol, values) {
+    var colLetter = startCol.charAt(0);
+    var scanRange = "Транзакции!" + colLetter + "14:" + colLetter + "1000";
+    return sheetsGet(scanRange).then(function(existing) {
+      var nextRow = 14 + existing.length;
+      var endCol = String.fromCharCode(colLetter.charCodeAt(0) + 4);
+      var writeRange = "Транзакции!" + colLetter + nextRow + ":" + endCol + nextRow;
+      var url = SHEETS_API + "/values/" + encodeURIComponent(writeRange) + "?valueInputOption=USER_ENTERED";
+      return tokenManager.fetch(url, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ values: values }),
+      }).then(function(res) {
+        if (!res.ok) return res.json().then(function(e) { throw new Error(e.error ? e.error.message : "Sheets PUT " + res.status); });
+        return res.json();
+      });
+    });
+  }
+
+  /* ───── Demo data ───── */
+  var DEMO_REFS = {
+    accounts: ["Тинькофф дебетовая", "Сбер основная", "Мамина карта ВТБ", "Наличные", "Вклад Сбер"],
+    expenseCats: ["Питание", "Здоровье", "Транспорт", "Коммуналка", "Коты", "Развлечения", "Одежда"],
+    incomeCats: ["Зарплата", "Фриланс", "Кешбэк", "Подарок"],
+  };
+  var DEMO_HISTORY = [
+    { date: "2026-03-06", amount: -1240, account: "Тинькофф дебетовая", note: "Корм котам", cat: "Коты" },
+    { date: "2026-03-05", amount: -3500, account: "Сбер основная", note: "Продукты на неделю", cat: "Питание" },
+    { date: "2026-03-04", amount: -890.5, account: "Тинькофф дебетовая", note: "Метро", cat: "Транспорт" },
+    { date: "2026-03-03", amount: 45000, account: "Сбер основная", note: "Зарплата", cat: "Зарплата" },
+    { date: "2026-03-02", amount: -2100, account: "Наличные", note: "Аптека", cat: "Здоровье" },
+    { date: "2026-03-01", amount: -6800, account: "Мамина карта ВТБ", note: "Коммуналка март", cat: "Коммуналка" },
+    { date: "2026-02-28", amount: -420, account: "Тинькофф дебетовая", note: "Наполнитель", cat: "Коты" },
+    { date: "2026-02-27", amount: -1890, account: "Сбер основная", note: "Пятёрочка", cat: "Питание" },
+    { date: "2026-02-26", amount: 5000, account: "Тинькофф дебетовая", note: "Фриланс за баннер", cat: "Фриланс" },
+  ];
+
+  /* ───── FloatingPaws ───── */
+  function FloatingPaws() {
+    var paws = useRef(
+      Array.from({ length: 8 }, function(_, i) {
+        return { id: i, left: 8 + Math.random() * 84, delay: Math.random() * 10,
+          duration: 10 + Math.random() * 8, size: 10 + Math.random() * 10,
+          opacity: 0.045 + Math.random() * 0.035 };
+      })
+    ).current;
+    return html`<div style=${{ position: "absolute", inset: 0, pointerEvents: "none", overflow: "hidden", zIndex: 0 }}>
+      ${paws.map(function(p) {
+        return html`<div key=${p.id} style=${{
+          position: "absolute", left: p.left + "%", bottom: "-24px",
+          fontSize: p.size + "px", opacity: p.opacity,
+          animation: "floatUp " + p.duration + "s " + p.delay + "s linear infinite",
+        }}>🐾</div>`;
+      })}
+    </div>`;
+  }
+
+  /* ───── Toast ───── */
+  function Toast(props) {
+    useEffect(function() { var t = setTimeout(props.onDone, 2600); return function() { clearTimeout(t); }; }, [props.onDone]);
+    return html`<div style=${{
+      position: "fixed", top: 20, left: "50%", transform: "translateX(-50%)",
+      padding: "12px 24px", borderRadius: 14,
+      background: props.type === "ok" ? "#7ec8a0" : "#e88", color: "#fff",
+      fontFamily: "'Comfortaa', sans-serif", fontSize: 14, fontWeight: 600,
+      boxShadow: "0 4px 20px rgba(0,0,0,.15)", zIndex: 9999,
+      animation: "fadeInDown .3s ease", whiteSpace: "nowrap",
+    }}>${props.type === "ok" ? "🐱 " : "😿 "}${props.message}</div>`;
+  }
+
+  /* ───── LoginScreen ───── */
+  function LoginScreen(props) {
+    return html`<div style=${S.loginWrap}>
+      <div style=${S.loginCard}>
+        <div style=${{ fontSize: 64, marginBottom: 8 }}>🐱</div>
+        <h1 style=${S.logo}>Budget Cat</h1>
+        <p style=${{ color: "#b8a9c9", fontSize: 14, marginTop: 4 }}>Мяу-бюджет для двоих</p>
+        <button style=${{ ...S.btn, ...S.btnPri, marginTop: 24, width: "100%" }} onClick=${props.onLogin} disabled=${!props.ready}>
+          <span style=${{ fontSize: 18 }}>🐾</span> Войти через Google
+        </button>
+        <button style=${{ ...S.btn, ...S.btnGhost, marginTop: 10, width: "100%" }} onClick=${props.onDemo}>Демо-режим</button>
+        ${props.error && html`<p style=${{ color: "#c44", marginTop: 12, fontSize: 13 }}>${props.error}</p>`}
+        <p style=${{ fontSize: 11, color: "#c8b8d8", marginTop: 20, lineHeight: 1.5 }}>
+          Подключается к твоей Google-таблице.<br />Все данные остаются у тебя.
+        </p>
+      </div>
+    </div>`;
+  }
+
+  /* ───── EntryForm ───── */
+  function EntryForm(props) {
+    var _d = useState(today()), date = _d[0], setDate = _d[1];
+    var _a = useState(""), amountRaw = _a[0], setAmountRaw = _a[1];
+    var _ac = useState(""), account = _ac[0], setAccount = _ac[1];
+    var _c = useState(""), category = _c[0], setCategory = _c[1];
+    var _n = useState(""), note = _n[0], setNote = _n[1];
+    var _s = useState(false), submitting = _s[0], setSubmitting = _s[1];
+
+    var isIncome = amountRaw.trim().charAt(0) === "+";
+    var categories = isIncome ? props.refs.incomeCats : props.refs.expenseCats;
+    useEffect(function() { setCategory(""); }, [isIncome]);
+
+    function handleSubmit() {
+      var numStr = amountRaw.replace("+", "").replace(",", ".").trim();
+      var num = parseFloat(numStr);
+      if (!num || isNaN(num) || !account) return;
+      setSubmitting(true);
+      props.onSubmit({ date: date, amount: isIncome ? num : -num, account: account, category: category || "Прочее", note: note, isIncome: isIncome })
+        .then(function() { setAmountRaw(""); setNote(""); setCategory(""); })
+        .finally(function() { setSubmitting(false); });
+    }
+
+    return html`<div style=${S.card}>
+      <h2 style=${S.cardTitle}>Новая запись</h2>
+
+      <label style=${S.label}>Дата</label>
+      <input type="date" value=${date} onChange=${function(e) { setDate(e.target.value); }} style=${S.input} />
+
+      <label style=${S.label}>
+        Сумма ${isIncome
+          ? html`<span style=${{ color: "#7ec8a0" }}>↑ пополнение</span>`
+          : html`<span style=${{ color: "#e8879c" }}>↓ расход</span>`}
+      </label>
+      <input type="text" inputMode="decimal" placeholder="1240.50  или  +45000" value=${amountRaw}
+        onChange=${function(e) { setAmountRaw(e.target.value); }}
+        style=${{ ...S.input, fontSize: 22, fontWeight: 700, letterSpacing: 1, color: isIncome ? "#5a9e76" : "#c46a7a" }}
+      />
+
+      <label style=${S.label}>${isIncome ? "Куда" : "Откуда"}</label>
+      <select value=${account} onChange=${function(e) { setAccount(e.target.value); }} style=${S.input}>
+        <option value="">— выбери счёт —</option>
+        ${props.refs.accounts.map(function(a) { return html`<option key=${a} value=${a}>${a}</option>`; })}
+      </select>
+
+      <label style=${S.label}>Категория</label>
+      <select value=${category} onChange=${function(e) { setCategory(e.target.value); }} style=${S.input}>
+        <option value="">— категория —</option>
+        ${categories.map(function(c) { return html`<option key=${c} value=${c}>${c}</option>`; })}
+      </select>
+
+      <label style=${S.label}>Примечание</label>
+      <input type="text" placeholder="Корм котам, перевод маме..." value=${note}
+        onChange=${function(e) { setNote(e.target.value); }} style=${S.input} />
+
+      <button style=${{ ...S.btn, ...S.btnPri, width: "100%", marginTop: 20, opacity: submitting ? 0.6 : 1 }}
+        onClick=${handleSubmit} disabled=${submitting || !amountRaw.trim()}>
+        <span style=${{ fontSize: 18 }}>🐾</span>
+        ${submitting ? " Пишу в таблицу..." : " Записать"}
+      </button>
+
+      ${props.isDemo && html`<p style=${{ fontSize: 11, color: "#b8a9c9", textAlign: "center", marginTop: 8 }}>Демо-режим: данные не уходят в таблицу</p>`}
+    </div>`;
+  }
+
+  /* ───── HistoryList ───── */
+  function HistoryList(props) {
+    if (!props.items.length) {
+      return html`<div style=${{ ...S.card, textAlign: "center", color: "#b8a9c9" }}>
+        <p style=${{ fontSize: 32, marginBottom: 4 }}>🐾</p>Записей пока нет
+      </div>`;
+    }
+    return html`<div style=${S.card}>
+      <h2 style=${S.cardTitle}>Последние записи</h2>
+      <div style=${{ display: "flex", flexDirection: "column", gap: 2 }}>
+        ${props.items.slice(0, 20).map(function(tx, i) {
+          return html`<div key=${i} style=${{
+            display: "flex", justifyContent: "space-between", alignItems: "center",
+            padding: "10px 12px", borderRadius: 12,
+            background: i % 2 === 0 ? "rgba(232,135,156,.04)" : "transparent",
+          }}>
+            <div style=${{ flex: 1, minWidth: 0 }}>
+              <div style=${{ fontSize: 14, fontWeight: 600, color: "#4a3728", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                ${tx.note || tx.cat || "—"}
+              </div>
+              <div style=${{ fontSize: 11, color: "#b8a9c9", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                ${fmtDate(tx.date)} · ${tx.account}${tx.cat && tx.note ? " · " + tx.cat : ""}
+              </div>
+            </div>
+            <div style=${{ fontWeight: 700, fontSize: 14, color: tx.amount >= 0 ? "#5a9e76" : "#c46a7a", whiteSpace: "nowrap", marginLeft: 12 }}>
+              ${tx.amount >= 0 ? "+" : ""}${fmtMoney(tx.amount)}
+            </div>
+          </div>`;
+        })}
+      </div>
+    </div>`;
+  }
+
+  /* ───── SVG Donut ───── */
+  function DonutChart(props) {
+    var data = props.data, colors = props.colors;
+    var total = data.reduce(function(s, d) { return s + d.value; }, 0);
+    if (!total) return null;
+    var size = 200, cx = 100, cy = 100, r = 75, stroke = 28;
+    var circ = 2 * Math.PI * r;
+    var offset = 0;
+    var _hover = useState(-1), hover = _hover[0], setHover = _hover[1];
+
+    var segments = data.map(function(d, i) {
+      var pct = d.value / total;
+      var dash = pct * circ;
+      var gap = circ - dash;
+      var rot = (offset / total) * 360 - 90;
+      offset += d.value;
+      return { dash: dash, gap: gap, rot: rot, color: colors[i % colors.length], name: d.name, value: d.value, pct: pct };
+    });
+
+    return html`<div style=${{ position: "relative", width: "100%", display: "flex", justifyContent: "center" }}>
+      <svg viewBox="0 0 200 200" width=${size} height=${size} style=${{ overflow: "visible" }}>
+        ${segments.map(function(seg, i) {
+          var isHovered = hover === i;
+          var scale = isHovered ? "scale(1.04)" : "scale(1)";
+          return html`<circle key=${i}
+            cx=${cx} cy=${cy} r=${r}
+            fill="none" stroke=${seg.color} stroke-width=${isHovered ? stroke + 4 : stroke}
+            stroke-dasharray=${seg.dash + " " + seg.gap}
+            transform=${"rotate(" + seg.rot + " " + cx + " " + cy + ")"}
+            style=${{ transformOrigin: cx + "px " + cy + "px", transition: "stroke-width .2s", cursor: "pointer" }}
+            onMouseEnter=${function() { setHover(i); }}
+            onMouseLeave=${function() { setHover(-1); }}
+            onTouchStart=${function() { setHover(i); }}
+            onTouchEnd=${function() { setHover(-1); }}
+          />`;
+        })}
+        <text x=${cx} y=${cy - 6} textAnchor="middle" style=${{ fontSize: 13, fill: "#b8a9c9", fontFamily: "'Quicksand', sans-serif" }}>
+          ${hover >= 0 ? segments[hover].name : "Всего"}
+        </text>
+        <text x=${cx} y=${cy + 14} textAnchor="middle" style=${{ fontSize: 15, fontWeight: 700, fill: "#4a3728", fontFamily: "'Quicksand', sans-serif" }}>
+          ${hover >= 0 ? fmtMoney(segments[hover].value) : fmtMoney(total)}
+        </text>
+        ${hover >= 0 && html`<text x=${cx} y=${cy + 30} textAnchor="middle" style=${{ fontSize: 11, fill: "#b8a9c9", fontFamily: "'Quicksand', sans-serif" }}>
+          ${Math.round(segments[hover].pct * 100)}%
+        </text>`}
+      </svg>
+    </div>`;
+  }
+
+  /* ───── AnalyticsScreen ───── */
+  function AnalyticsScreen(props) {
+    var spending = {};
+    var totalSpent = 0, totalIncome = 0;
+    props.items.forEach(function(tx) {
+      if (tx.amount < 0) {
+        var cat = tx.cat || "Прочее";
+        spending[cat] = (spending[cat] || 0) + Math.abs(tx.amount);
+        totalSpent += Math.abs(tx.amount);
+      } else {
+        totalIncome += tx.amount;
+      }
+    });
+    var pieData = Object.entries(spending).map(function(e) { return { name: e[0], value: Math.round(e[1] * 100) / 100 }; }).sort(function(a, b) { return b.value - a.value; });
+    var COLORS = ["#e8879c", "#b8a9c9", "#7ec8a0", "#f0c27a", "#85b8e0", "#d4a0c0", "#a0d4c0", "#e0a085", "#c4a5de", "#8cc8b0"];
+
+    return html`<div style=${{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <div style=${{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <div style=${{ ...S.card, textAlign: "center", padding: 16 }}>
+          <div style=${{ fontSize: 11, color: "#b8a9c9", marginBottom: 4 }}>Расходы</div>
+          <div style=${{ fontSize: 18, fontWeight: 700, color: "#c46a7a" }}>${fmtMoney(totalSpent)}</div>
+        </div>
+        <div style=${{ ...S.card, textAlign: "center", padding: 16 }}>
+          <div style=${{ fontSize: 11, color: "#b8a9c9", marginBottom: 4 }}>Доходы</div>
+          <div style=${{ fontSize: 18, fontWeight: 700, color: "#5a9e76" }}>${fmtMoney(totalIncome)}</div>
+        </div>
+      </div>
+
+      <div style=${{ ...S.card, textAlign: "center", padding: 16 }}>
+        <div style=${{ fontSize: 11, color: "#b8a9c9", marginBottom: 4 }}>Баланс за период</div>
+        <div style=${{ fontSize: 24, fontWeight: 700, color: totalIncome - totalSpent >= 0 ? "#5a9e76" : "#c46a7a" }}>
+          ${fmtMoney(totalIncome - totalSpent)}
+        </div>
+        <div style=${{ fontSize: 40, marginTop: 4 }}>${totalIncome - totalSpent >= 0 ? "😸" : "🙀"}</div>
+      </div>
+
+      ${pieData.length > 0 && html`<div style=${S.card}>
+        <h2 style=${S.cardTitle}>Расходы по категориям</h2>
+        <${DonutChart} data=${pieData} colors=${COLORS} />
+        <div style=${{ display: "flex", flexWrap: "wrap", gap: "6px 14px", marginTop: 16, justifyContent: "center" }}>
+          ${pieData.map(function(d, i) {
+            return html`<div key=${d.name} style=${{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, color: "#4a3728" }}>
+              <div style=${{ width: 10, height: 10, borderRadius: 3, flexShrink: 0, background: COLORS[i % COLORS.length] }} />
+              <span style=${{ whiteSpace: "nowrap" }}>${d.name}: ${fmtMoney(d.value)}</span>
+            </div>`;
+          })}
+        </div>
+      </div>`}
+    </div>`;
+  }
+
+  /* ───── PullToRefresh ───── */
+  function PullToRefresh(props) {
+    var _pull = useState(0), pull = _pull[0], setPull = _pull[1];
+    var _pulling = useState(false), pulling = _pulling[0], setPulling = _pulling[1];
+    var startY = useRef(0);
+    var scrollRef = props.scrollRef;
+    var threshold = 80;
+
+    function onTouchStart(e) {
+      if (scrollRef.current && scrollRef.current.scrollTop > 0) return;
+      startY.current = e.touches[0].clientY;
+      setPulling(true);
+    }
+    function onTouchMove(e) {
+      if (!pulling) return;
+      var dy = e.touches[0].clientY - startY.current;
+      if (dy < 0) dy = 0;
+      if (dy > 120) dy = 120;
+      setPull(dy);
+    }
+    function onTouchEnd() {
+      if (pull >= threshold && !props.refreshing) {
+        props.onRefresh();
+      }
+      setPull(0);
+      setPulling(false);
+    }
+
+    var progress = Math.min(pull / threshold, 1);
+    var show = pull > 10;
+
+    return html`<div onTouchStart=${onTouchStart} onTouchMove=${onTouchMove} onTouchEnd=${onTouchEnd} style=${{ position: "relative" }}>
+      ${show && html`<div style=${{
+        position: "absolute", top: 0, left: 0, right: 0,
+        display: "flex", justifyContent: "center", alignItems: "center",
+        height: pull * 0.5, overflow: "hidden", zIndex: 10,
+        transition: pulling ? "none" : "height .3s ease",
+      }}>
+        <div style=${{
+          fontSize: 20,
+          opacity: progress,
+          transform: "rotate(" + (progress * 360) + "deg)",
+          transition: pulling ? "none" : "all .3s ease",
+        }}>${props.refreshing ? "⏳" : progress >= 1 ? "🐱" : "🐾"}</div>
+      </div>`}
+      <div style=${{ transform: "translateY(" + (show ? pull * 0.3 : 0) + "px)", transition: pulling ? "none" : "transform .3s ease" }}>
+        ${props.children}
+      </div>
+    </div>`;
+  }
+
+  /* ───── NavBar ───── */
+  function NavBar(props) {
+    var tabs = [
+      { id: "entry", icon: "✏️", label: "Запись" },
+      { id: "history", icon: "📋", label: "История" },
+      { id: "analytics", icon: "📊", label: "Аналитика" },
+    ];
+    return html`<nav style=${{ display: "flex", padding: "0 16px", marginBottom: 14, position: "relative", zIndex: 2 }}>
+      ${tabs.map(function(t) {
+        return html`<button key=${t.id} onClick=${function() { props.onChange(t.id); }} style=${{
+          flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 2,
+          padding: "8px 0", background: props.tab === t.id ? "rgba(232,135,156,.06)" : "transparent",
+          border: "none", borderBottom: props.tab === t.id ? "2.5px solid #e8879c" : "2.5px solid transparent",
+          borderRadius: "12px 12px 0 0", cursor: "pointer",
+          fontFamily: "'Comfortaa', sans-serif", transition: "all .2s",
+          color: props.tab === t.id ? "#e8879c" : "#b8a9c9",
+        }}>
+          <span style=${{ fontSize: 16 }}>${t.icon}</span>
+          <span style=${{ fontSize: 11, fontWeight: 600 }}>${t.label}</span>
+        </button>`;
+      })}
+    </nav>`;
+  }
+
+  /* ═══════════════════ Main ═══════════════════ */
+  function BudgetCat() {
+    var auth = useGoogleAuth();
+    var _demo = useState(false), demo = _demo[0], setDemo = _demo[1];
+    var _tab = useState("entry"), tab = _tab[0], setTab = _tab[1];
+    var _refs = useState(null), refs = _refs[0], setRefs = _refs[1];
+    var _history = useState([]), history = _history[0], setHistory = _history[1];
+    var _toast = useState(null), toast = _toast[0], setToast = _toast[1];
+    var _loading = useState(false), loading = _loading[0], setLoading = _loading[1];
+    var _refreshing = useState(false), refreshing = _refreshing[0], setRefreshing = _refreshing[1];
+
+    var connected = !!auth.token;
+    var active = connected || demo;
+
+    function loadData(silent) {
+      if (demo) { setRefs(DEMO_REFS); setHistory(DEMO_HISTORY); return Promise.resolve(); }
+      if (!silent) setLoading(true);
+      setRefreshing(true);
+      return Promise.all([
+        sheetsGet("Справочник!A4:A100"),
+        sheetsGet("Справочник!B4:B100"),
+        sheetsGet("Справочник!C4:C100"),
+      ]).then(function(results) {
+        setRefs({
+          accounts: results[0].flat().filter(Boolean),
+          expenseCats: results[1].flat().filter(Boolean),
+          incomeCats: results[2].flat().filter(Boolean),
+        });
+        return Promise.all([
+          sheetsGet("Транзакции!B14:F500"),
+          sheetsGet("Транзакции!H14:L500"),
+        ]);
+      }).then(function(results) {
+        var merged = [];
+        results[0].forEach(function(r) {
+          if (!r[0]) return;
+          merged.push({ date: parseRuDate(r[0]), amount: -Math.abs(parseFloat((r[1] || "0").replace(/\s/g, "").replace(",", "."))),
+            account: (r[2] || "").trim(), note: (r[3] || "").trim(), cat: (r[4] || "").trim() });
+        });
+        results[1].forEach(function(r) {
+          if (!r[0]) return;
+          merged.push({ date: parseRuDate(r[0]), amount: Math.abs(parseFloat((r[1] || "0").replace(/\s/g, "").replace(",", "."))),
+            account: (r[2] || "").trim(), note: (r[3] || "").trim(), cat: (r[4] || "").trim() });
+        });
+        merged.sort(function(a, b) { return (b.date || "").localeCompare(a.date || ""); });
+        setHistory(merged);
+        if (silent) setToast({ msg: "Данные обновлены", type: "ok" });
+      }).catch(function(e) {
+        setToast({ msg: "Ошибка: " + e.message, type: "err" });
+      }).finally(function() { setLoading(false); setRefreshing(false); });
+    }
+
+    useEffect(function() {
+      if (!active) return;
+      loadData(false);
+    }, [active, demo, auth.token]);
+
+    function handleSubmit(tx) {
+      if (demo) {
+        setHistory(function(h) { return [Object.assign({}, tx, { cat: tx.category })].concat(h); });
+        setToast({ msg: "Записано (демо)", type: "ok" });
+        return Promise.resolve();
+      }
+      var row = [fmtDate(tx.date), Math.abs(tx.amount), tx.account, tx.note, tx.category];
+      return sheetsWrite(tx.isIncome ? "H" : "B", [row]).then(function() {
+        setHistory(function(h) { return [Object.assign({}, tx, { cat: tx.category })].concat(h); });
+        setToast({ msg: "Мяу! Записано в таблицу", type: "ok" });
+      }).catch(function(e) {
+        setToast({ msg: "Ошибка записи: " + e.message, type: "err" });
+      });
+    }
+
+    var scrollRef = useRef(null);
+
+    return html`<div ref=${scrollRef} style=${S.root}>
+      ${toast && html`<${Toast} message=${toast.msg} type=${toast.type} onDone=${function() { setToast(null); }} />`}
+      ${!active
+        ? html`<${LoginScreen} onLogin=${auth.login} onDemo=${function() { setDemo(true); }} ready=${auth.ready} error=${auth.error} />`
+        : html`<${PullToRefresh} scrollRef=${scrollRef} refreshing=${refreshing} onRefresh=${function() { loadData(true); }}>
+            <div style=${S.appWrap}>
+              <${FloatingPaws} />
+              <header style=${{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px 8px", position: "relative", zIndex: 2 }}>
+                <div style=${{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style=${{ fontSize: 26 }}>🐱</span>
+                  <span style=${S.logo}>Budget Cat</span>
+                </div>
+                <button onClick=${function() { if (!refreshing) loadData(true); }} disabled=${refreshing}
+                  style=${{ background: "none", border: "none", cursor: "pointer", padding: 8, fontSize: 18, opacity: refreshing ? 0.5 : 0.7, animation: refreshing ? "spin 1s linear infinite" : "none" }}
+                >🔄</button>
+              </header>
+
+              <${NavBar} tab=${tab} onChange=${setTab} />
+
+              <div style=${{ padding: "0 16px", position: "relative", zIndex: 1, paddingBottom: 24 }}>
+                ${loading
+                  ? html`<div style=${{ textAlign: "center", padding: 40, color: "#b8a9c9" }}>
+                      <div style=${{ fontSize: 40, animation: "pulse 1s infinite" }}>🐱</div>
+                      <p style=${{ marginTop: 8 }}>Загружаю данные...</p>
+                    </div>`
+                  : refs
+                    ? html`<${React.Fragment}>
+                        ${tab === "entry" && html`<${EntryForm} refs=${refs} onSubmit=${handleSubmit} isDemo=${demo} />`}
+                        ${tab === "history" && html`<${HistoryList} items=${history} />`}
+                        ${tab === "analytics" && html`<${AnalyticsScreen} items=${history} />`}
+                      <//>`
+                    : null}
+              </div>
+            </div>
+          <//>`}
+    </div>`;
+  }
+
+  /* ───── Styles ───── */
+  var S = {
+    root: {
+      position: "fixed", inset: 0,
+      overflowY: "auto", overflowX: "hidden",
+      background: "linear-gradient(160deg, #FFF0F5 0%, #F3E8F9 40%, #E8F0FE 100%)",
+      fontFamily: "'Quicksand', sans-serif", color: "#4a3728",
+    },
+    loginWrap: {
+      display: "flex", alignItems: "center", justifyContent: "center",
+      minHeight: "100vh", padding: 20,
+    },
+    loginCard: {
+      background: "#fff", borderRadius: 24, padding: "40px 32px",
+      textAlign: "center", maxWidth: 360, width: "100%",
+      boxShadow: "0 8px 40px rgba(184,169,201,.2)",
+      border: "1px solid rgba(232,135,156,.12)",
+    },
+    logo: {
+      fontFamily: "'Comfortaa', sans-serif", fontSize: 22, fontWeight: 700,
+      color: "#e8879c", letterSpacing: 0.5,
+    },
+    btn: {
+      display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8,
+      padding: "14px 24px", borderRadius: 16, border: "none", cursor: "pointer",
+      fontSize: 15, fontWeight: 600, transition: "all .2s ease",
+      fontFamily: "'Comfortaa', sans-serif",
+    },
+    btnPri: {
+      background: "linear-gradient(135deg, #e8879c, #d4a0c0)", color: "#fff",
+      boxShadow: "0 4px 16px rgba(232,135,156,.3)",
+    },
+    btnGhost: {
+      background: "transparent", color: "#b8a9c9",
+      border: "1px solid rgba(184,169,201,.3)",
+    },
+    appWrap: {
+      width: "100%", maxWidth: 480, margin: "0 auto", position: "relative",
+      overflow: "hidden", minHeight: "100%",
+    },
+    card: {
+      background: "#fff", borderRadius: 20, padding: "24px 20px",
+      boxShadow: "0 4px 24px rgba(184,169,201,.12)",
+      border: "1px solid rgba(232,135,156,.08)",
+    },
+    cardTitle: {
+      fontFamily: "'Comfortaa', sans-serif", fontSize: 18, fontWeight: 700,
+      color: "#e8879c", marginBottom: 16,
+    },
+    label: {
+      display: "block", fontSize: 12, fontWeight: 600,
+      color: "#b8a9c9", marginBottom: 6, marginTop: 14,
+    },
+    input: {
+      width: "100%", padding: "12px 14px", borderRadius: 12,
+      border: "1.5px solid rgba(184,169,201,.25)", fontSize: 15,
+      color: "#4a3728", outline: "none", background: "rgba(255,240,245,.3)",
+      transition: "border-color .2s", fontFamily: "'Quicksand', sans-serif",
+    },
+  };
+
+  /* ───── Mount ───── */
+  ReactDOM.createRoot(document.getElementById("root")).render(html`<${BudgetCat} />`);
+</script>
+</body>
+</html>
