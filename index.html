@@ -62,10 +62,37 @@ if ("serviceWorker" in navigator) {
   var useEffect = React.useEffect;
   var useCallback = React.useCallback;
   var useRef = React.useRef;
-  var SPREADSHEET_ID = "11aTr8ZMv0RjHORAFBSDGvpwuXu8zx0Ta8l_QDMhQEFY";
+
+  /* ╔══════════════════════════════════════════════════════════════╗
+     ║  ТЕМА — меняй здесь внешний вид                            ║
+     ╚══════════════════════════════════════════════════════════════╝ */
+  var THEME = {
+    appName: "Budget Cat",               // название в хедере и на логине
+    subtitle: "Мяу-бюджет для двоих",    // подпись на экране входа
+    appIcon: "🐱",                       // иконка рядом с названием
+    floatEmoji: "🐾",                    // летающие штуки на фоне (🐾 ✨ ⭐ 🌸 ❄️)
+    btnIcon: "🐾",                       // иконка на кнопке "Записать"
+    toastOk: "🐱",                       // иконка успешного тоста
+    toastErr: "😿",                      // иконка ошибки
+    loginIcon: "🐱",                     // большая иконка на экране входа
+    // Фон приложения — градиент или url("image.jpg")
+    background: "linear-gradient(160deg, #FFF0F5 0%, #F3E8F9 40%, #E8F0FE 100%)",
+    // Основной акцентный цвет (заголовки, кнопка, подчёркивание табов)
+    accent: "#e8879c",
+    // Иконка приложения (favicon, manifest) — менять отдельно в <head> и manifest.json
+  };
+
+  /* ═══ Таблица ═══ */
+  var DEFAULT_SPREADSHEET_ID = "11aTr8ZMv0RjHORAFBSDGvpwuXu8zx0Ta8l_QDMhQEFY";
   var CLIENT_ID = "837302269270-qgbc9ji25q0jgcd5usnsob0ls1kdhqpa.apps.googleusercontent.com";
   var SCOPES = "https://www.googleapis.com/auth/spreadsheets";
-  var SHEETS_API = "https://sheets.googleapis.com/v4/spreadsheets/" + SPREADSHEET_ID;
+
+  function getSpreadsheetId() {
+    try { return localStorage.getItem("budget_cat_sheet") || DEFAULT_SPREADSHEET_ID; } catch(e) { return DEFAULT_SPREADSHEET_ID; }
+  }
+  function sheetsUrl() {
+    return "https://sheets.googleapis.com/v4/spreadsheets/" + getSpreadsheetId();
+  }
 
   /* ───── helpers ───── */
   function today() { return new Date().toISOString().slice(0, 10); }
@@ -198,7 +225,7 @@ if ("serviceWorker" in navigator) {
 
   /* ───── Sheets helpers ───── */
   function sheetsGet(range) {
-    var url = SHEETS_API + "/values/" + encodeURIComponent(range);
+    var url = sheetsUrl() + "/values/" + encodeURIComponent(range);
     return tokenManager.fetch(url)
       .then(function(res) { if (!res.ok) throw new Error("Sheets GET " + res.status); return res.json(); })
       .then(function(data) { return data.values || []; });
@@ -211,7 +238,7 @@ if ("serviceWorker" in navigator) {
       var nextRow = 14 + existing.length;
       var endCol = String.fromCharCode(colLetter.charCodeAt(0) + 4);
       var writeRange = "Транзакции!" + colLetter + nextRow + ":" + endCol + nextRow;
-      var url = SHEETS_API + "/values/" + encodeURIComponent(writeRange) + "?valueInputOption=USER_ENTERED";
+      var url = sheetsUrl() + "/values/" + encodeURIComponent(writeRange) + "?valueInputOption=USER_ENTERED";
       return tokenManager.fetch(url, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -238,7 +265,7 @@ if ("serviceWorker" in navigator) {
           position: "absolute", left: p.left + "%", bottom: "-24px",
           fontSize: p.size + "px", opacity: p.opacity,
           animation: "floatUp " + p.duration + "s " + p.delay + "s linear infinite",
-        }}>🐾</div>`;
+        }}>` + THEME.floatEmoji + `</div>`;
       })}
     </div>`;
   }
@@ -253,18 +280,18 @@ if ("serviceWorker" in navigator) {
       fontFamily: "'Comfortaa', sans-serif", fontSize: 14, fontWeight: 600,
       boxShadow: "0 4px 20px rgba(0,0,0,.15)", zIndex: 9999,
       animation: "fadeInDown .3s ease", whiteSpace: "nowrap",
-    }}>${props.type === "ok" ? "🐱 " : "😿 "}${props.message}</div>`;
+    }}>${props.type === "ok" ? THEME.toastOk + " " : THEME.toastErr + " "}${props.message}</div>`;
   }
 
   /* ───── LoginScreen ───── */
   function LoginScreen(props) {
     return html`<div style=${S.loginWrap}>
       <div style=${S.loginCard}>
-        <div style=${{ fontSize: 64, marginBottom: 8 }}>🐱</div>
-        <h1 style=${S.logo}>Budget Cat</h1>
-        <p style=${{ color: "#b8a9c9", fontSize: 14, marginTop: 4 }}>Мяу-бюджет для двоих</p>
+        <div style=${{ fontSize: 64, marginBottom: 8 }}>${THEME.loginIcon}</div>
+        <h1 style=${S.logo}>${THEME.appName}</h1>
+        <p style=${{ color: "#b8a9c9", fontSize: 14, marginTop: 4 }}>${THEME.subtitle}</p>
         <button style=${{ ...S.btn, ...S.btnPri, marginTop: 24, width: "100%" }} onClick=${props.onLogin} disabled=${!props.ready}>
-          <span style=${{ fontSize: 18 }}>🐾</span> Войти через Google
+          <span style=${{ fontSize: 18 }}>${THEME.btnIcon}</span> Войти через Google
         </button>
         ${props.error && html`<p style=${{ color: "#c44", marginTop: 12, fontSize: 13 }}>${props.error}</p>`}
         <p style=${{ fontSize: 11, color: "#c8b8d8", marginTop: 20, lineHeight: 1.5 }}>
@@ -347,7 +374,7 @@ if ("serviceWorker" in navigator) {
 
       <button style=${{ ...S.btn, ...S.btnPri, width: "100%", marginTop: 20, opacity: canSubmit ? 1 : 0.45 }}
         onClick=${handleSubmit} disabled=${!canSubmit}>
-        <span style=${{ fontSize: 18 }}>🐾</span>
+        <span style=${{ fontSize: 18 }}>${THEME.btnIcon}</span>
         ${submitting ? " Пишу в таблицу..." : " Записать"}
       </button>
 
@@ -625,10 +652,53 @@ if ("serviceWorker" in navigator) {
           opacity: progress,
           transform: "rotate(" + (progress * 360) + "deg)",
           transition: pulling ? "none" : "all .3s ease",
-        }}>${props.refreshing ? "⏳" : progress >= 1 ? "🐱" : "🐾"}</div>
+        }}>${props.refreshing ? "⏳" : progress >= 1 ? THEME.appIcon : THEME.floatEmoji}</div>
       </div>`}
       <div style=${{ transform: "translateY(" + (show ? pull * 0.3 : 0) + "px)", transition: pulling ? "none" : "transform .3s ease" }}>
         ${props.children}
+      </div>
+    </div>`;
+  }
+
+  /* ───── SettingsScreen ───── */
+  function SettingsScreen(props) {
+    var current = getSpreadsheetId();
+    var _id = useState(current), sheetId = _id[0], setSheetId = _id[1];
+    var changed = sheetId.trim() !== current;
+
+    function handleSave() {
+      var val = sheetId.trim();
+      if (!val) return;
+      try { localStorage.setItem("budget_cat_sheet", val); } catch(e) {}
+      props.onSave();
+    }
+
+    return html`<div style=${{ position: "fixed", inset: 0, background: "rgba(0,0,0,.4)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+      <div style=${{ ...S.card, maxWidth: 400, width: "100%", maxHeight: "80vh", overflowY: "auto" }}>
+        <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+          <h2 style=${{ ...S.cardTitle, marginBottom: 0 }}>Настройки</h2>
+          <button onClick=${props.onClose} style=${{ background: "none", border: "none", fontSize: 22, cursor: "pointer", color: "#b8a9c9", padding: 4 }}>✕</button>
+        </div>
+
+        <label style=${S.label}>ID таблицы Google Sheets</label>
+        <p style=${{ fontSize: 11, color: "#b8a9c9", marginBottom: 6 }}>Из ссылки: docs.google.com/spreadsheets/d/<b>этот_кусок</b>/edit</p>
+        <input type="text" value=${sheetId} onChange=${function(e) { setSheetId(e.target.value); }}
+          style=${{ ...S.input, fontSize: 13, fontFamily: "monospace" }} />
+
+        <button onClick=${handleSave}
+          style=${{ ...S.btn, ...S.btnPri, width: "100%", marginTop: 16, opacity: changed && sheetId.trim() ? 1 : 0.45 }}
+          disabled=${!changed || !sheetId.trim()}>
+          Сохранить и перезагрузить
+        </button>
+
+        <div style=${{ marginTop: 20, padding: "12px 0", borderTop: "1px solid rgba(184,169,201,.15)" }}>
+          <p style=${{ fontSize: 11, color: "#b8a9c9" }}>
+            Аккаунт: ${props.email || "—"}
+          </p>
+          <p style=${{ fontSize: 11, color: "#b8a9c9", marginTop: 4 }}>
+            Тема, иконки, фон — в начале файла index.html, блок THEME.
+          </p>
+        </div>
       </div>
     </div>`;
   }
@@ -645,10 +715,10 @@ if ("serviceWorker" in navigator) {
         return html`<button key=${t.id} onClick=${function() { props.onChange(t.id); }} style=${{
           flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 2,
           padding: "8px 0", background: props.tab === t.id ? "rgba(232,135,156,.06)" : "transparent",
-          border: "none", borderBottom: props.tab === t.id ? "2.5px solid #e8879c" : "2.5px solid transparent",
+          border: "none", borderBottom: props.tab === t.id ? "2.5px solid " + THEME.accent : "2.5px solid transparent",
           borderRadius: "12px 12px 0 0", cursor: "pointer",
           fontFamily: "'Comfortaa', sans-serif", transition: "all .2s",
-          color: props.tab === t.id ? "#e8879c" : "#b8a9c9",
+          color: props.tab === t.id ? THEME.accent : "#b8a9c9",
         }}>
           <span style=${{ fontSize: 16 }}>${t.icon}</span>
           <span style=${{ fontSize: 11, fontWeight: 600 }}>${t.label}</span>
@@ -667,6 +737,7 @@ if ("serviceWorker" in navigator) {
     var _toast = useState(null), toast = _toast[0], setToast = _toast[1];
     var _loading = useState(false), loading = _loading[0], setLoading = _loading[1];
     var _refreshing = useState(false), refreshing = _refreshing[0], setRefreshing = _refreshing[1];
+    var _showSettings = useState(false), showSettings = _showSettings[0], setShowSettings = _showSettings[1];
 
     var connected = !!auth.token;
 
@@ -792,12 +863,17 @@ if ("serviceWorker" in navigator) {
               <${FloatingPaws} />
               <header style=${{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px 8px", position: "relative", zIndex: 2 }}>
                 <div style=${{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span style=${{ fontSize: 26 }}>🐱</span>
-                  <span style=${S.logo}>Budget Cat</span>
+                  <span style=${{ fontSize: 26 }}>${THEME.appIcon}</span>
+                  <span style=${S.logo}>${THEME.appName}</span>
                 </div>
-                <button onClick=${function() { if (!refreshing) loadData(true); }} disabled=${refreshing}
-                  style=${{ background: "none", border: "none", cursor: "pointer", padding: 8, fontSize: 18, opacity: refreshing ? 0.5 : 0.7, animation: refreshing ? "spin 1s linear infinite" : "none" }}
-                >🔄</button>
+                <div style=${{ display: "flex", gap: 4 }}>
+                  <button onClick=${function() { if (!refreshing) loadData(true); }} disabled=${refreshing}
+                    style=${{ background: "none", border: "none", cursor: "pointer", padding: 8, fontSize: 18, opacity: refreshing ? 0.5 : 0.7, animation: refreshing ? "spin 1s linear infinite" : "none" }}
+                  >🔄</button>
+                  <button onClick=${function() { setShowSettings(true); }}
+                    style=${{ background: "none", border: "none", cursor: "pointer", padding: 8, fontSize: 16, opacity: 0.6 }}
+                  >⚙️</button>
+                </div>
               </header>
 
               <${NavBar} tab=${tab} onChange=${setTab} />
@@ -805,7 +881,7 @@ if ("serviceWorker" in navigator) {
               <div style=${{ padding: "0 16px", position: "relative", zIndex: 1, paddingBottom: 24 }}>
                 ${loading
                   ? html`<div style=${{ textAlign: "center", padding: 40, color: "#b8a9c9" }}>
-                      <div style=${{ fontSize: 40, animation: "pulse 1s infinite" }}>🐱</div>
+                      <div style=${{ fontSize: 40, animation: "pulse 1s infinite" }}>${THEME.appIcon}</div>
                       <p style=${{ marginTop: 8 }}>Загружаю данные...</p>
                     </div>`
                   : refs
@@ -818,6 +894,11 @@ if ("serviceWorker" in navigator) {
               </div>
             </div>
           <//>`}
+      ${showSettings && html`<${SettingsScreen}
+        email=${auth.profile ? auth.profile.email : ""}
+        onClose=${function() { setShowSettings(false); }}
+        onSave=${function() { setShowSettings(false); window.location.reload(); }}
+      />`}
     </div>`;
   }
 
@@ -826,7 +907,7 @@ if ("serviceWorker" in navigator) {
     root: {
       position: "fixed", inset: 0,
       overflowY: "auto", overflowX: "hidden",
-      background: "linear-gradient(160deg, #FFF0F5 0%, #F3E8F9 40%, #E8F0FE 100%)",
+      background: THEME.background, backgroundSize: "cover",
       fontFamily: "'Quicksand', sans-serif", color: "#4a3728",
     },
     loginWrap: {
@@ -841,7 +922,7 @@ if ("serviceWorker" in navigator) {
     },
     logo: {
       fontFamily: "'Comfortaa', sans-serif", fontSize: 22, fontWeight: 700,
-      color: "#e8879c", letterSpacing: 0.5,
+      color: THEME.accent, letterSpacing: 0.5,
     },
     btn: {
       display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8,
@@ -868,7 +949,7 @@ if ("serviceWorker" in navigator) {
     },
     cardTitle: {
       fontFamily: "'Comfortaa', sans-serif", fontSize: 18, fontWeight: 700,
-      color: "#e8879c", marginBottom: 16,
+      color: THEME.accent, marginBottom: 16,
     },
     label: {
       display: "block", fontSize: 12, fontWeight: 600,
