@@ -383,75 +383,74 @@ if ("serviceWorker" in navigator) {
     var _hover = useState(-1), hover = _hover[0], setHover = _hover[1];
 
     function arcPath(startAngle, endAngle, outer, inner) {
-      // Clamp to avoid full-circle edge case
       if (endAngle - startAngle >= 359.99) endAngle = startAngle + 359.99;
-      var s1 = startAngle * Math.PI / 180;
-      var e1 = endAngle * Math.PI / 180;
-      var largeArc = (endAngle - startAngle > 180) ? 1 : 0;
-      var x1 = cx + outer * Math.cos(s1), y1 = cy + outer * Math.sin(s1);
-      var x2 = cx + outer * Math.cos(e1), y2 = cy + outer * Math.sin(e1);
-      var x3 = cx + inner * Math.cos(e1), y3 = cy + inner * Math.sin(e1);
-      var x4 = cx + inner * Math.cos(s1), y4 = cy + inner * Math.sin(s1);
-      return "M " + x1 + " " + y1 +
-        " A " + outer + " " + outer + " 0 " + largeArc + " 1 " + x2 + " " + y2 +
-        " L " + x3 + " " + y3 +
-        " A " + inner + " " + inner + " 0 " + largeArc + " 0 " + x4 + " " + y4 +
-        " Z";
+      var s1 = startAngle * Math.PI / 180, e1 = endAngle * Math.PI / 180;
+      var la = (endAngle - startAngle > 180) ? 1 : 0;
+      return "M " + (cx + outer * Math.cos(s1)) + " " + (cy + outer * Math.sin(s1)) +
+        " A " + outer + " " + outer + " 0 " + la + " 1 " + (cx + outer * Math.cos(e1)) + " " + (cy + outer * Math.sin(e1)) +
+        " L " + (cx + inner * Math.cos(e1)) + " " + (cy + inner * Math.sin(e1)) +
+        " A " + inner + " " + inner + " 0 " + la + " 0 " + (cx + inner * Math.cos(s1)) + " " + (cy + inner * Math.sin(s1)) + " Z";
     }
 
     var angle = -90;
     var segments = data.map(function(d, i) {
-      var sweep = (d.value / total) * 360;
-      var start = angle;
+      var sweep = (d.value / total) * 360, start = angle;
       angle += sweep;
       return { start: start, end: start + sweep, color: colors[i % colors.length], name: d.name, value: d.value, pct: d.value / total };
     });
 
-    return html`<div style=${{ position: "relative", width: "100%", display: "flex", justifyContent: "center" }}>
-      <svg viewBox="0 0 200 200" style=${{ width: "100%", maxWidth: 200, height: "auto" }}>
-        ${segments.map(function(seg, i) {
-          var isH = hover === i;
-          var o = isH ? outerR + 4 : outerR;
-          var n = isH ? innerR - 2 : innerR;
-          return html`<path key=${i} d=${arcPath(seg.start, seg.end, o, n)} fill=${seg.color}
-            style=${{ transition: "d .2s, opacity .2s", cursor: "pointer", opacity: hover >= 0 && !isH ? 0.6 : 1 }}
-            onMouseEnter=${function() { setHover(i); }}
-            onMouseLeave=${function() { setHover(-1); }}
-            onTouchStart=${function(e) { e.preventDefault(); setHover(i); }}
-            onTouchEnd=${function() { setHover(-1); }}
-          />`;
-        })}
-        <text x=${cx} y=${cy - 6} text-anchor="middle" style=${{ fontSize: 12, fill: "#b8a9c9", fontFamily: "'Quicksand', sans-serif" }}>
-          ${hover >= 0 ? segments[hover].name : "Всего"}
-        </text>
-        <text x=${cx} y=${cy + 12} text-anchor="middle" style=${{ fontSize: 14, fontWeight: 700, fill: "#4a3728", fontFamily: "'Quicksand', sans-serif" }}>
-          ${hover >= 0 ? fmtMoney(segments[hover].value) : fmtMoney(total)}
-        </text>
-        ${hover >= 0 && html`<text x=${cx} y=${cy + 26} text-anchor="middle" style=${{ fontSize: 11, fill: "#b8a9c9", fontFamily: "'Quicksand', sans-serif" }}>
-          ${Math.round(segments[hover].pct * 100)}%
-        </text>`}
-      </svg>
+    var active = hover >= 0 ? segments[hover] : null;
+
+    return html`<div style=${{ display: "flex", alignItems: "center", gap: 16 }}>
+      <div style=${{ flexShrink: 0, width: 130 }}>
+        <svg viewBox="0 0 200 200" style=${{ width: "100%", height: "auto" }}>
+          ${segments.map(function(seg, i) {
+            var isH = hover === i;
+            return html`<path key=${i} d=${arcPath(seg.start, seg.end, isH ? outerR + 4 : outerR, isH ? innerR - 2 : innerR)} fill=${seg.color}
+              style=${{ transition: "opacity .2s", cursor: "pointer", opacity: hover >= 0 && !isH ? 0.5 : 1 }}
+              onMouseEnter=${function() { setHover(i); }}
+              onMouseLeave=${function() { setHover(-1); }}
+              onTouchStart=${function(e) { e.preventDefault(); setHover(i); }}
+              onTouchEnd=${function() { setHover(-1); }}
+            />`;
+          })}
+        </svg>
+      </div>
+      <div style=${{ flex: 1, minWidth: 0 }}>
+        ${active
+          ? html`<div>
+              <div style=${{ fontSize: 14, fontWeight: 700, color: active.color, marginBottom: 4, wordBreak: "break-word" }}>${active.name}</div>
+              <div style=${{ fontSize: 20, fontWeight: 700, color: "#4a3728" }}>${fmtMoney(active.value)}</div>
+              <div style=${{ fontSize: 12, color: "#b8a9c9", marginTop: 2 }}>${Math.round(active.pct * 100)}% от общего</div>
+            </div>`
+          : html`<div>
+              <div style=${{ fontSize: 12, color: "#b8a9c9", marginBottom: 4 }}>Всего расходов</div>
+              <div style=${{ fontSize: 20, fontWeight: 700, color: "#4a3728" }}>${fmtMoney(total)}</div>
+              <div style=${{ fontSize: 12, color: "#b8a9c9", marginTop: 2 }}>Нажми на сегмент</div>
+            </div>`}
+      </div>
     </div>`;
   }
 
   /* ───── ProgressBar ───── */
   function ProgressBar(props) {
-    var pct = props.budget ? Math.min(Math.abs(props.spent / props.budget) * 100, 100) : 0;
-    var over = props.diff < 0;
+    var hasBudget = props.budget > 0;
+    var pct = hasBudget ? Math.min(Math.abs(props.spent / props.budget) * 100, 100) : 100;
+    var over = hasBudget ? props.diff < 0 : true;
     var color = over ? "#e8879c" : "#7ec8a0";
     return html`<div style=${{ marginBottom: 10 }}>
       <div style=${{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
         <span style=${{ fontSize: 13, fontWeight: 600, color: "#4a3728" }}>${props.name}</span>
         <span style=${{ fontSize: 12, color: over ? "#c46a7a" : "#5a9e76", fontWeight: 600 }}>
-          ${fmtMoney(props.spent)}${props.budget ? " / " + fmtMoney(props.budget) : ""}
+          ${fmtMoney(props.spent)}${hasBudget ? " / " + fmtMoney(props.budget) : ""}
         </span>
       </div>
-      ${props.budget ? html`<div style=${{ height: 6, borderRadius: 3, background: "rgba(184,169,201,.12)" }}>
+      <div style=${{ height: 6, borderRadius: 3, background: "rgba(184,169,201,.12)" }}>
         <div style=${{ height: 6, borderRadius: 3, background: color, width: pct + "%", transition: "width .3s ease" }} />
-      </div>` : null}
-      ${props.budget ? html`<div style=${{ fontSize: 11, color: over ? "#c46a7a" : "#b8a9c9", marginTop: 2 }}>
+      </div>
+      ${hasBudget ? html`<div style=${{ fontSize: 11, color: over ? "#c46a7a" : "#b8a9c9", marginTop: 2 }}>
         ${over ? "Перебор: " + fmtMoney(Math.abs(props.diff)) : "Ещё: " + fmtMoney(props.diff)}
-      </div>` : null}
+      </div>` : html`<div style=${{ fontSize: 11, color: "#c46a7a", marginTop: 2 }}>Вне плана</div>`}
     </div>`;
   }
 
