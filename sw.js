@@ -1,4 +1,4 @@
-const CACHE = "budget-cat-v9";
+const CACHE = "budget-cat-v10";
 const PRECACHE = [
   "./index.html",
   "./manifest.json",
