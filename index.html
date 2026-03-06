@@ -169,6 +169,8 @@ if ("serviceWorker" in navigator) {
           clientRef.current = client;
           tokenManager._client = client;
           setReady(true);
+          // Try silent re-auth (works if Google session cookie is alive)
+          try { client.requestAccessToken({ prompt: "" }); } catch(e) {}
         } catch(e) { setError("GSI init failed"); }
       };
       script.onerror = function() { setError("Failed to load Google auth"); };
@@ -209,24 +211,6 @@ if ("serviceWorker" in navigator) {
       });
     });
   }
-
-  /* ───── Demo data ───── */
-  var DEMO_REFS = {
-    accounts: ["Тинькофф дебетовая", "Сбер основная", "Мамина карта ВТБ", "Наличные", "Вклад Сбер"],
-    expenseCats: ["Питание", "Здоровье", "Транспорт", "Коммуналка", "Коты", "Развлечения", "Одежда"],
-    incomeCats: ["Зарплата", "Фриланс", "Кешбэк", "Подарок"],
-  };
-  var DEMO_HISTORY = [
-    { date: "2026-03-06", amount: -1240, account: "Тинькофф дебетовая", note: "Корм котам", cat: "Коты" },
-    { date: "2026-03-05", amount: -3500, account: "Сбер основная", note: "Продукты на неделю", cat: "Питание" },
-    { date: "2026-03-04", amount: -890.5, account: "Тинькофф дебетовая", note: "Метро", cat: "Транспорт" },
-    { date: "2026-03-03", amount: 45000, account: "Сбер основная", note: "Зарплата", cat: "Зарплата" },
-    { date: "2026-03-02", amount: -2100, account: "Наличные", note: "Аптека", cat: "Здоровье" },
-    { date: "2026-03-01", amount: -6800, account: "Мамина карта ВТБ", note: "Коммуналка март", cat: "Коммуналка" },
-    { date: "2026-02-28", amount: -420, account: "Тинькофф дебетовая", note: "Наполнитель", cat: "Коты" },
-    { date: "2026-02-27", amount: -1890, account: "Сбер основная", note: "Пятёрочка", cat: "Питание" },
-    { date: "2026-02-26", amount: 5000, account: "Тинькофф дебетовая", note: "Фриланс за баннер", cat: "Фриланс" },
-  ];
 
   /* ───── FloatingPaws ───── */
   function FloatingPaws() {
@@ -271,7 +255,6 @@ if ("serviceWorker" in navigator) {
         <button style=${{ ...S.btn, ...S.btnPri, marginTop: 24, width: "100%" }} onClick=${props.onLogin} disabled=${!props.ready}>
           <span style=${{ fontSize: 18 }}>🐾</span> Войти через Google
         </button>
-        <button style=${{ ...S.btn, ...S.btnGhost, marginTop: 10, width: "100%" }} onClick=${props.onDemo}>Демо-режим</button>
         ${props.error && html`<p style=${{ color: "#c44", marginTop: 12, fontSize: 13 }}>${props.error}</p>`}
         <p style=${{ fontSize: 11, color: "#c8b8d8", marginTop: 20, lineHeight: 1.5 }}>
           Подключается к твоей Google-таблице.<br />Все данные остаются у тебя.
@@ -341,7 +324,6 @@ if ("serviceWorker" in navigator) {
         ${submitting ? " Пишу в таблицу..." : " Записать"}
       </button>
 
-      ${props.isDemo && html`<p style=${{ fontSize: 11, color: "#b8a9c9", textAlign: "center", marginTop: 8 }}>Демо-режим: данные не уходят в таблицу</p>`}
     </div>`;
   }
 
@@ -383,44 +365,55 @@ if ("serviceWorker" in navigator) {
     var data = props.data, colors = props.colors;
     var total = data.reduce(function(s, d) { return s + d.value; }, 0);
     if (!total) return null;
-    var size = 200, cx = 100, cy = 100, r = 75, stroke = 28;
-    var circ = 2 * Math.PI * r;
-    var offset = 0;
+    var cx = 100, cy = 100, outerR = 82, innerR = 52;
     var _hover = useState(-1), hover = _hover[0], setHover = _hover[1];
 
+    function arcPath(startAngle, endAngle, outer, inner) {
+      // Clamp to avoid full-circle edge case
+      if (endAngle - startAngle >= 359.99) endAngle = startAngle + 359.99;
+      var s1 = startAngle * Math.PI / 180;
+      var e1 = endAngle * Math.PI / 180;
+      var largeArc = (endAngle - startAngle > 180) ? 1 : 0;
+      var x1 = cx + outer * Math.cos(s1), y1 = cy + outer * Math.sin(s1);
+      var x2 = cx + outer * Math.cos(e1), y2 = cy + outer * Math.sin(e1);
+      var x3 = cx + inner * Math.cos(e1), y3 = cy + inner * Math.sin(e1);
+      var x4 = cx + inner * Math.cos(s1), y4 = cy + inner * Math.sin(s1);
+      return "M " + x1 + " " + y1 +
+        " A " + outer + " " + outer + " 0 " + largeArc + " 1 " + x2 + " " + y2 +
+        " L " + x3 + " " + y3 +
+        " A " + inner + " " + inner + " 0 " + largeArc + " 0 " + x4 + " " + y4 +
+        " Z";
+    }
+
+    var angle = -90;
     var segments = data.map(function(d, i) {
-      var pct = d.value / total;
-      var dash = pct * circ;
-      var gap = circ - dash;
-      var rot = (offset / total) * 360 - 90;
-      offset += d.value;
-      return { dash: dash, gap: gap, rot: rot, color: colors[i % colors.length], name: d.name, value: d.value, pct: pct };
+      var sweep = (d.value / total) * 360;
+      var start = angle;
+      angle += sweep;
+      return { start: start, end: start + sweep, color: colors[i % colors.length], name: d.name, value: d.value, pct: d.value / total };
     });
 
     return html`<div style=${{ position: "relative", width: "100%", display: "flex", justifyContent: "center" }}>
-      <svg viewBox="0 0 200 200" width=${size} height=${size} style=${{ overflow: "visible" }}>
+      <svg viewBox="0 0 200 200" style=${{ width: "100%", maxWidth: 200, height: "auto" }}>
         ${segments.map(function(seg, i) {
-          var isHovered = hover === i;
-          var scale = isHovered ? "scale(1.04)" : "scale(1)";
-          return html`<circle key=${i}
-            cx=${cx} cy=${cy} r=${r}
-            fill="none" stroke=${seg.color} stroke-width=${isHovered ? stroke + 4 : stroke}
-            stroke-dasharray=${seg.dash + " " + seg.gap}
-            transform=${"rotate(" + seg.rot + " " + cx + " " + cy + ")"}
-            style=${{ transformOrigin: cx + "px " + cy + "px", transition: "stroke-width .2s", cursor: "pointer" }}
+          var isH = hover === i;
+          var o = isH ? outerR + 4 : outerR;
+          var n = isH ? innerR - 2 : innerR;
+          return html`<path key=${i} d=${arcPath(seg.start, seg.end, o, n)} fill=${seg.color}
+            style=${{ transition: "d .2s, opacity .2s", cursor: "pointer", opacity: hover >= 0 && !isH ? 0.6 : 1 }}
             onMouseEnter=${function() { setHover(i); }}
             onMouseLeave=${function() { setHover(-1); }}
-            onTouchStart=${function() { setHover(i); }}
+            onTouchStart=${function(e) { e.preventDefault(); setHover(i); }}
             onTouchEnd=${function() { setHover(-1); }}
           />`;
         })}
-        <text x=${cx} y=${cy - 6} textAnchor="middle" style=${{ fontSize: 13, fill: "#b8a9c9", fontFamily: "'Quicksand', sans-serif" }}>
+        <text x=${cx} y=${cy - 6} text-anchor="middle" style=${{ fontSize: 12, fill: "#b8a9c9", fontFamily: "'Quicksand', sans-serif" }}>
           ${hover >= 0 ? segments[hover].name : "Всего"}
         </text>
-        <text x=${cx} y=${cy + 14} textAnchor="middle" style=${{ fontSize: 15, fontWeight: 700, fill: "#4a3728", fontFamily: "'Quicksand', sans-serif" }}>
+        <text x=${cx} y=${cy + 12} text-anchor="middle" style=${{ fontSize: 14, fontWeight: 700, fill: "#4a3728", fontFamily: "'Quicksand', sans-serif" }}>
           ${hover >= 0 ? fmtMoney(segments[hover].value) : fmtMoney(total)}
         </text>
-        ${hover >= 0 && html`<text x=${cx} y=${cy + 30} textAnchor="middle" style=${{ fontSize: 11, fill: "#b8a9c9", fontFamily: "'Quicksand', sans-serif" }}>
+        ${hover >= 0 && html`<text x=${cx} y=${cy + 26} text-anchor="middle" style=${{ fontSize: 11, fill: "#b8a9c9", fontFamily: "'Quicksand', sans-serif" }}>
           ${Math.round(segments[hover].pct * 100)}%
         </text>`}
       </svg>
@@ -556,7 +549,6 @@ if ("serviceWorker" in navigator) {
   /* ═══════════════════ Main ═══════════════════ */
   function BudgetCat() {
     var auth = useGoogleAuth();
-    var _demo = useState(false), demo = _demo[0], setDemo = _demo[1];
     var _tab = useState("entry"), tab = _tab[0], setTab = _tab[1];
     var _refs = useState(null), refs = _refs[0], setRefs = _refs[1];
     var _history = useState([]), history = _history[0], setHistory = _history[1];
@@ -565,10 +557,8 @@ if ("serviceWorker" in navigator) {
     var _refreshing = useState(false), refreshing = _refreshing[0], setRefreshing = _refreshing[1];
 
     var connected = !!auth.token;
-    var active = connected || demo;
 
     function loadData(silent) {
-      if (demo) { setRefs(DEMO_REFS); setHistory(DEMO_HISTORY); return Promise.resolve(); }
       if (!silent) setLoading(true);
       setRefreshing(true);
       return Promise.all([
@@ -606,16 +596,11 @@ if ("serviceWorker" in navigator) {
     }
 
     useEffect(function() {
-      if (!active) return;
+      if (!connected) return;
       loadData(false);
-    }, [active, demo, auth.token]);
+    }, [connected]);
 
     function handleSubmit(tx) {
-      if (demo) {
-        setHistory(function(h) { return [Object.assign({}, tx, { cat: tx.category })].concat(h); });
-        setToast({ msg: "Записано (демо)", type: "ok" });
-        return Promise.resolve();
-      }
       var row = [fmtDate(tx.date), Math.abs(tx.amount), tx.account, tx.note, tx.category];
       return sheetsWrite(tx.isIncome ? "H" : "B", [row]).then(function() {
         setHistory(function(h) { return [Object.assign({}, tx, { cat: tx.category })].concat(h); });
@@ -629,8 +614,8 @@ if ("serviceWorker" in navigator) {
 
     return html`<div ref=${scrollRef} style=${S.root}>
       ${toast && html`<${Toast} message=${toast.msg} type=${toast.type} onDone=${function() { setToast(null); }} />`}
-      ${!active
-        ? html`<${LoginScreen} onLogin=${auth.login} onDemo=${function() { setDemo(true); }} ready=${auth.ready} error=${auth.error} />`
+      ${!connected
+        ? html`<${LoginScreen} onLogin=${auth.login} ready=${auth.ready} error=${auth.error} />`
         : html`<${PullToRefresh} scrollRef=${scrollRef} refreshing=${refreshing} onRefresh=${function() { loadData(true); }}>
             <div style=${S.appWrap}>
               <${FloatingPaws} />
@@ -654,7 +639,7 @@ if ("serviceWorker" in navigator) {
                     </div>`
                   : refs
                     ? html`<${React.Fragment}>
-                        ${tab === "entry" && html`<${EntryForm} refs=${refs} onSubmit=${handleSubmit} isDemo=${demo} />`}
+                        ${tab === "entry" && html`<${EntryForm} refs=${refs} onSubmit=${handleSubmit} />`}
                         ${tab === "history" && html`<${HistoryList} items=${history} />`}
                         ${tab === "analytics" && html`<${AnalyticsScreen} items=${history} />`}
                       <//>`
