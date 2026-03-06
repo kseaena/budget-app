@@ -41,13 +41,6 @@
       background-repeat: no-repeat; background-position: right 14px center;
       padding-right: 36px !important;
     }
-    input[type="date"]::-webkit-calendar-picker-indicator {
-      display: none !important;
-      -webkit-appearance: none;
-    }
-    input[type="date"]::-webkit-date-and-time-value {
-      text-align: left;
-    }
     input::-webkit-outer-spin-button,
     input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
   </style>
@@ -289,6 +282,7 @@ if ("serviceWorker" in navigator) {
     var _c = useState(""), category = _c[0], setCategory = _c[1];
     var _n = useState(""), note = _n[0], setNote = _n[1];
     var _s = useState(false), submitting = _s[0], setSubmitting = _s[1];
+    var dateRef = useRef(null);
 
     var isIncome = amountRaw.trim().charAt(0) === "+";
     var categories = isIncome ? props.refs.incomeCats : props.refs.expenseCats;
@@ -314,9 +308,12 @@ if ("serviceWorker" in navigator) {
       <h2 style=${S.cardTitle}>Новая запись</h2>
 
       <label style=${S.label}>Дата</label>
-      <input type="date" value=${date} onChange=${function(e) { setDate(e.target.value); }}
-        onClick=${function(e) { try { e.target.showPicker(); } catch(ex) {} }}
-        readOnly style=${S.input} />
+      <input type="date" ref=${dateRef} value=${date} onChange=${function(e) { setDate(e.target.value); }}
+        style=${{ position: "absolute", opacity: 0, pointerEvents: "none", width: 0, height: 0 }} />
+      <div onClick=${function() { try { dateRef.current.showPicker(); } catch(ex) { dateRef.current.focus(); } }}
+        style=${{ ...S.input, cursor: "pointer" }}>
+        ${fmtDate(date)}
+      </div>
 
       <label style=${S.label}>
         Сумма ${isIncome
