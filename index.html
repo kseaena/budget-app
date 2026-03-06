@@ -67,8 +67,8 @@ if ("serviceWorker" in navigator) {
      ║  ТЕМА — меняй здесь внешний вид                            ║
      ╚══════════════════════════════════════════════════════════════╝ */
   var THEME = {
-    appName: "Budget",               // название в хедере и на логине
-    subtitle: "Мяу-бюджет",    // подпись на экране входа
+    appName: "Мяу-бюджет",               // название в хедере и на логине
+    subtitle: "",    // подпись на экране входа
     appIcon: "🐱",                       // иконка рядом с названием
     floatEmoji: "🌸",                    // летающие штуки на фоне (🐾 ✨ ⭐ 🌸 ❄️)
     btnIcon: "🐾",                       // иконка на кнопке "Записать"
@@ -76,9 +76,9 @@ if ("serviceWorker" in navigator) {
     toastErr: "😿",                      // иконка ошибки
     loginIcon: "⭐",                     // большая иконка на экране входа
     // Фон приложения — градиент или url("image.jpg")
-    background: "url('bg.jpg') center/cover no-repeat",
+   background: "linear-gradient(160deg, #FFF0F5 0%, #F3E8F9 40%, #E8F0FE 100%)",
     // Основной акцентный цвет (заголовки, кнопка, подчёркивание табов)
-    accent: "#353a7b",
+    accent: "#e8879c",
     // Иконка приложения (favicon, manifest) — менять отдельно в <head> и manifest.json
   };
 
