@@ -106,7 +106,9 @@ if ("serviceWorker" in navigator) {
         // GSI will call the callback we set during init
         self._onRefresh = function(newToken) { resolve(newToken); };
         self._onRefreshError = function(err) { reject(err); };
-        self._client.requestAccessToken({ prompt: "" }); // prompt:"" = silent if session alive
+        var hint = "";
+        try { hint = localStorage.getItem("budget_cat_hint") || ""; } catch(e) {}
+        self._client.requestAccessToken({ prompt: "", login_hint: hint });
       }).then(function(newToken) {
         self._refreshPromise = null;
         return newToken;
@@ -136,6 +138,8 @@ if ("serviceWorker" in navigator) {
   };
 
   /* ───── Google Auth ───── */
+  var HINT_KEY = "budget_cat_hint";
+
   function useGoogleAuth() {
     var _token = useState(null), token = _token[0], setToken = _token[1];
     var _profile = useState(null), profile = _profile[0], setProfile = _profile[1];
@@ -149,9 +153,13 @@ if ("serviceWorker" in navigator) {
       script.async = true;
       script.onload = function() {
         try {
+          var savedHint = "";
+          try { savedHint = localStorage.getItem(HINT_KEY) || ""; } catch(e) {}
+
           var client = window.google.accounts.oauth2.initTokenClient({
             client_id: CLIENT_ID,
-            scope: SCOPES + " https://www.googleapis.com/auth/userinfo.profile",
+            scope: SCOPES + " https://www.googleapis.com/auth/userinfo.profile email",
+            hint: savedHint,
             callback: function(resp) {
               if (resp.error) {
                 setError(resp.error);
@@ -163,14 +171,20 @@ if ("serviceWorker" in navigator) {
               if (tokenManager._onRefresh) { tokenManager._onRefresh(resp.access_token); tokenManager._onRefresh = null; }
               fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
                 headers: { Authorization: "Bearer " + resp.access_token },
-              }).then(function(r) { return r.json(); }).then(function(p) { setProfile(p); }).catch(function(){});
+              }).then(function(r) { return r.json(); }).then(function(p) {
+                setProfile(p);
+                // Remember email for next auto-login
+                if (p.email) { try { localStorage.setItem(HINT_KEY, p.email); } catch(e) {} }
+              }).catch(function(){});
             },
           });
           clientRef.current = client;
           tokenManager._client = client;
           setReady(true);
-          // Try silent re-auth (works if Google session cookie is alive)
-          try { client.requestAccessToken({ prompt: "" }); } catch(e) {}
+          // Silent auto-login: with hint Google skips account chooser
+          if (savedHint) {
+            try { client.requestAccessToken({ prompt: "", login_hint: savedHint }); } catch(e) {}
+          }
         } catch(e) { setError("GSI init failed"); }
       };
       script.onerror = function() { setError("Failed to load Google auth"); };
