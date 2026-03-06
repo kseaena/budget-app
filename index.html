@@ -42,8 +42,9 @@
       padding-right: 36px !important;
     }
     input[type="date"]::-webkit-calendar-picker-indicator {
-      filter: invert(.5) sepia(1) saturate(3) hue-rotate(290deg); cursor: pointer;
+      opacity: 0; position: absolute; right: 0; width: 100%; height: 100%; cursor: pointer;
     }
+    input[type="date"] { position: relative; }
     input::-webkit-outer-spin-button,
     input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
   </style>
@@ -290,12 +291,18 @@ if ("serviceWorker" in navigator) {
     var categories = isIncome ? props.refs.incomeCats : props.refs.expenseCats;
     useEffect(function() { setCategory(""); }, [isIncome]);
 
+    // validate amount: optional +, then digits with optional , or . separator
+    var amountTrimmed = amountRaw.trim();
+    var amountValid = /^\+?\d+([.,]\d+)?$/.test(amountTrimmed);
+    var canSubmit = amountValid && account && category && note.trim() && !submitting;
+
     function handleSubmit() {
-      var numStr = amountRaw.replace("+", "").replace(",", ".").trim();
+      if (!canSubmit) return;
+      var numStr = amountTrimmed.replace("+", "").replace(",", ".");
       var num = parseFloat(numStr);
-      if (!num || isNaN(num) || !account) return;
+      if (!num || isNaN(num)) return;
       setSubmitting(true);
-      props.onSubmit({ date: date, amount: isIncome ? num : -num, account: account, category: category || "Прочее", note: note, isIncome: isIncome })
+      props.onSubmit({ date: date, amount: isIncome ? num : -num, account: account, category: category, note: note.trim(), isIncome: isIncome })
         .then(function() { setAmountRaw(""); setNote(""); setCategory(""); })
         .finally(function() { setSubmitting(false); });
     }
@@ -311,29 +318,33 @@ if ("serviceWorker" in navigator) {
           ? html`<span style=${{ color: "#7ec8a0" }}>↑ пополнение</span>`
           : html`<span style=${{ color: "#e8879c" }}>↓ расход</span>`}
       </label>
-      <input type="text" inputMode="decimal" placeholder="1240.50  или  +45000" value=${amountRaw}
+      <div style=${{ fontSize: 11, marginBottom: 6, display: "flex", gap: 10 }}>
+        <span style=${{ color: "#c46a7a" }}>500,55</span>
+        <span style=${{ color: "#5a9e76" }}>+500</span>
+      </div>
+      <input type="text" inputMode="text" value=${amountRaw}
         onChange=${function(e) { setAmountRaw(e.target.value); }}
         style=${{ ...S.input, fontSize: 22, fontWeight: 700, letterSpacing: 1, color: isIncome ? "#5a9e76" : "#c46a7a" }}
       />
 
       <label style=${S.label}>${isIncome ? "Куда" : "Откуда"}</label>
-      <select value=${account} onChange=${function(e) { setAccount(e.target.value); }} style=${S.input}>
-        <option value="">— выбери счёт —</option>
+      <select value=${account} onChange=${function(e) { setAccount(e.target.value); }} style=${{ ...S.input, color: account ? "#4a3728" : "#b8a9c9" }}>
+        <option value="" disabled hidden></option>
         ${props.refs.accounts.map(function(a) { return html`<option key=${a} value=${a}>${a}</option>`; })}
       </select>
 
       <label style=${S.label}>Категория</label>
-      <select value=${category} onChange=${function(e) { setCategory(e.target.value); }} style=${S.input}>
-        <option value="">— категория —</option>
+      <select value=${category} onChange=${function(e) { setCategory(e.target.value); }} style=${{ ...S.input, color: category ? "#4a3728" : "#b8a9c9" }}>
+        <option value="" disabled hidden></option>
         ${categories.map(function(c) { return html`<option key=${c} value=${c}>${c}</option>`; })}
       </select>
 
       <label style=${S.label}>Примечание</label>
-      <input type="text" placeholder="Корм котам, перевод маме..." value=${note}
+      <input type="text" value=${note}
         onChange=${function(e) { setNote(e.target.value); }} style=${S.input} />
 
-      <button style=${{ ...S.btn, ...S.btnPri, width: "100%", marginTop: 20, opacity: submitting ? 0.6 : 1 }}
-        onClick=${handleSubmit} disabled=${submitting || !amountRaw.trim()}>
+      <button style=${{ ...S.btn, ...S.btnPri, width: "100%", marginTop: 20, opacity: canSubmit ? 1 : 0.45 }}
+        onClick=${handleSubmit} disabled=${!canSubmit}>
         <span style=${{ fontSize: 18 }}>🐾</span>
         ${submitting ? " Пишу в таблицу..." : " Записать"}
       </button>
