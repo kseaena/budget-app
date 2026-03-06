@@ -67,23 +67,23 @@ if ("serviceWorker" in navigator) {
      ║  ТЕМА — меняй здесь внешний вид                            ║
      ╚══════════════════════════════════════════════════════════════╝ */
   var THEME = {
-    appName: "Budget Cat",               // название в хедере и на логине
-    subtitle: "Мяу-бюджет для двоих",    // подпись на экране входа
+    appName: "Budget",               // название в хедере и на логине
+    subtitle: "Мяу-бюджет",    // подпись на экране входа
     appIcon: "🐱",                       // иконка рядом с названием
-    floatEmoji: "🐾",                    // летающие штуки на фоне (🐾 ✨ ⭐ 🌸 ❄️)
+    floatEmoji: "🌸",                    // летающие штуки на фоне (🐾 ✨ ⭐ 🌸 ❄️)
     btnIcon: "🐾",                       // иконка на кнопке "Записать"
     toastOk: "🐱",                       // иконка успешного тоста
     toastErr: "😿",                      // иконка ошибки
-    loginIcon: "🐱",                     // большая иконка на экране входа
+    loginIcon: "⭐",                     // большая иконка на экране входа
     // Фон приложения — градиент или url("image.jpg")
-    background: "linear-gradient(160deg, #FFF0F5 0%, #F3E8F9 40%, #E8F0FE 100%)",
+   background: "url('bg.jpg') center/cover no-repeat",
     // Основной акцентный цвет (заголовки, кнопка, подчёркивание табов)
-    accent: "#e8879c",
+    accent: "#31306c",
     // Иконка приложения (favicon, manifest) — менять отдельно в <head> и manifest.json
   };
 
   /* ═══ Таблица ═══ */
-  var DEFAULT_SPREADSHEET_ID = "11aTr8ZMv0RjHORAFBSDGvpwuXu8zx0Ta8l_QDMhQEFY";
+  var DEFAULT_SPREADSHEET_ID = "1RsMR1sOpacxDYtS4JPiw9I9oRhircs83sXzjMu55Fos";
   var CLIENT_ID = "837302269270-qgbc9ji25q0jgcd5usnsob0ls1kdhqpa.apps.googleusercontent.com";
   var SCOPES = "https://www.googleapis.com/auth/spreadsheets";
 
