@@ -434,54 +434,139 @@ if ("serviceWorker" in navigator) {
     </div>`;
   }
 
+  /* ───── ProgressBar ───── */
+  function ProgressBar(props) {
+    var pct = props.budget ? Math.min(Math.abs(props.spent / props.budget) * 100, 100) : 0;
+    var over = props.diff < 0;
+    var color = over ? "#e8879c" : "#7ec8a0";
+    return html`<div style=${{ marginBottom: 10 }}>
+      <div style=${{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
+        <span style=${{ fontSize: 13, fontWeight: 600, color: "#4a3728" }}>${props.name}</span>
+        <span style=${{ fontSize: 12, color: over ? "#c46a7a" : "#5a9e76", fontWeight: 600 }}>
+          ${fmtMoney(props.spent)}${props.budget ? " / " + fmtMoney(props.budget) : ""}
+        </span>
+      </div>
+      ${props.budget ? html`<div style=${{ height: 6, borderRadius: 3, background: "rgba(184,169,201,.12)" }}>
+        <div style=${{ height: 6, borderRadius: 3, background: color, width: pct + "%", transition: "width .3s ease" }} />
+      </div>` : null}
+      ${props.budget ? html`<div style=${{ fontSize: 11, color: over ? "#c46a7a" : "#b8a9c9", marginTop: 2 }}>
+        ${over ? "Перебор: " + fmtMoney(Math.abs(props.diff)) : "Ещё: " + fmtMoney(props.diff)}
+      </div>` : null}
+    </div>`;
+  }
+
+  /* ───── Section header ───── */
+  function SectionTitle(props) {
+    return html`<div style=${{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+      <span style=${{ fontSize: 18 }}>${props.icon}</span>
+      <h2 style=${{ ...S.cardTitle, marginBottom: 0 }}>${props.text}</h2>
+    </div>`;
+  }
+
+  /* ───── AccountRow ───── */
+  function AccountRow(props) {
+    var delta = props.now - props.start;
+    return html`<div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: "1px solid rgba(184,169,201,.08)" }}>
+      <div style=${{ flex: 1, minWidth: 0 }}>
+        <div style=${{ fontSize: 13, fontWeight: 600, color: "#4a3728", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>${props.name}</div>
+        ${props.start !== undefined && html`<div style=${{ fontSize: 11, color: "#b8a9c9" }}>начало: ${fmtMoney(props.start)}</div>`}
+      </div>
+      <div style=${{ textAlign: "right", flexShrink: 0, marginLeft: 12 }}>
+        <div style=${{ fontSize: 14, fontWeight: 700, color: props.now >= 0 ? "#4a3728" : "#c46a7a" }}>${fmtMoney(props.now)}</div>
+        ${delta !== 0 && html`<div style=${{ fontSize: 11, color: delta > 0 ? "#5a9e76" : "#c46a7a" }}>
+          ${delta > 0 ? "+" : ""}${fmtMoney(delta)}
+        </div>`}
+      </div>
+    </div>`;
+  }
+
+  /* ───── DebtRow ───── */
+  function DebtRow(props) {
+    return html`<div style=${{ padding: "8px 0", borderBottom: "1px solid rgba(184,169,201,.08)" }}>
+      <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div style=${{ fontSize: 13, fontWeight: 600, color: "#4a3728", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, minWidth: 0 }}>${props.name}</div>
+        <div style=${{ fontSize: 14, fontWeight: 700, color: "#c46a7a", flexShrink: 0, marginLeft: 12 }}>${fmtMoney(props.now)}</div>
+      </div>
+      <div style=${{ display: "flex", gap: 12, marginTop: 4, fontSize: 11, color: "#b8a9c9" }}>
+        ${props.plan ? html`<span>план: ${fmtMoney(props.plan)}</span>` : null}
+        ${props.actual ? html`<span style=${{ color: "#5a9e76" }}>внесено: ${fmtMoney(props.actual)}</span>` : null}
+      </div>
+    </div>`;
+  }
+
   /* ───── AnalyticsScreen ───── */
   function AnalyticsScreen(props) {
-    var spending = {};
-    var totalSpent = 0, totalIncome = 0;
-    props.items.forEach(function(tx) {
-      if (tx.amount < 0) {
-        var cat = tx.cat || "Прочее";
-        spending[cat] = (spending[cat] || 0) + Math.abs(tx.amount);
-        totalSpent += Math.abs(tx.amount);
-      } else {
-        totalIncome += tx.amount;
-      }
-    });
-    var pieData = Object.entries(spending).map(function(e) { return { name: e[0], value: Math.round(e[1] * 100) / 100 }; }).sort(function(a, b) { return b.value - a.value; });
-    var COLORS = ["#e8879c", "#b8a9c9", "#7ec8a0", "#f0c27a", "#85b8e0", "#d4a0c0", "#a0d4c0", "#e0a085", "#c4a5de", "#8cc8b0"];
+    var d = props.data;
+    var COLORS = ["#e8879c", "#b8a9c9", "#7ec8a0", "#f0c27a", "#85b8e0", "#d4a0c0", "#a0d4c0", "#e0a085", "#c4a5de", "#8cc8b0", "#e0c485", "#85b8a0", "#c9879c", "#a0b8e0"];
+    var totalExpenses = d.expenses.reduce(function(s, e) { return s + Math.abs(e.spent); }, 0);
+    var totalIncome = d.income.reduce(function(s, e) { return s + e.amount; }, 0);
+    var pieData = d.expenses.filter(function(e) { return e.spent; }).map(function(e) { return { name: e.name, value: Math.abs(e.spent) }; }).sort(function(a, b) { return b.value - a.value; });
 
     return html`<div style=${{ display: "flex", flexDirection: "column", gap: 14 }}>
-      <div style=${{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-        <div style=${{ ...S.card, textAlign: "center", padding: 16 }}>
-          <div style=${{ fontSize: 11, color: "#b8a9c9", marginBottom: 4 }}>Расходы</div>
-          <div style=${{ fontSize: 18, fontWeight: 700, color: "#c46a7a" }}>${fmtMoney(totalSpent)}</div>
+
+      <!-- Summary -->
+      <div style=${{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+        <div style=${{ ...S.card, padding: 14, textAlign: "center" }}>
+          <div style=${{ fontSize: 11, color: "#b8a9c9", marginBottom: 2 }}>Кошелёк</div>
+          <div style=${{ fontSize: 18, fontWeight: 700, color: "#4a3728" }}>${fmtMoney(d.moneyNow)}</div>
+          <div style=${{ fontSize: 11, color: d.walletChange >= 0 ? "#5a9e76" : "#c46a7a", marginTop: 2 }}>
+            ${d.walletChange >= 0 ? "+" : ""}${fmtMoney(d.walletChange)}
+          </div>
         </div>
-        <div style=${{ ...S.card, textAlign: "center", padding: 16 }}>
-          <div style=${{ fontSize: 11, color: "#b8a9c9", marginBottom: 4 }}>Доходы</div>
-          <div style=${{ fontSize: 18, fontWeight: 700, color: "#5a9e76" }}>${fmtMoney(totalIncome)}</div>
+        <div style=${{ ...S.card, padding: 14, textAlign: "center" }}>
+          <div style=${{ fontSize: 11, color: "#b8a9c9", marginBottom: 2 }}>Долги</div>
+          <div style=${{ fontSize: 18, fontWeight: 700, color: d.debtNow < 0 ? "#c46a7a" : "#4a3728" }}>${fmtMoney(d.debtNow)}</div>
+          <div style=${{ fontSize: 11, color: d.debtChange >= 0 ? "#5a9e76" : "#c46a7a", marginTop: 2 }}>
+            ${d.debtChange > 0 ? "+" : ""}${d.debtChange !== 0 ? fmtMoney(d.debtChange) : "—"}
+          </div>
         </div>
       </div>
 
-      <div style=${{ ...S.card, textAlign: "center", padding: 16 }}>
-        <div style=${{ fontSize: 11, color: "#b8a9c9", marginBottom: 4 }}>Баланс за период</div>
-        <div style=${{ fontSize: 24, fontWeight: 700, color: totalIncome - totalSpent >= 0 ? "#5a9e76" : "#c46a7a" }}>
-          ${fmtMoney(totalIncome - totalSpent)}
+      <div style=${{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+        <div style=${{ ...S.card, padding: 14, textAlign: "center" }}>
+          <div style=${{ fontSize: 11, color: "#b8a9c9", marginBottom: 2 }}>Расходы</div>
+          <div style=${{ fontSize: 16, fontWeight: 700, color: "#c46a7a" }}>${fmtMoney(totalExpenses)}</div>
         </div>
-        <div style=${{ fontSize: 40, marginTop: 4 }}>${totalIncome - totalSpent >= 0 ? "😸" : "🙀"}</div>
+        <div style=${{ ...S.card, padding: 14, textAlign: "center" }}>
+          <div style=${{ fontSize: 11, color: "#b8a9c9", marginBottom: 2 }}>Доходы</div>
+          <div style=${{ fontSize: 16, fontWeight: 700, color: "#5a9e76" }}>${fmtMoney(totalIncome)}</div>
+        </div>
       </div>
 
+      <!-- Expenses donut + bars -->
       ${pieData.length > 0 && html`<div style=${S.card}>
-        <h2 style=${S.cardTitle}>Расходы по категориям</h2>
+        <${SectionTitle} icon="🍩" text="Расходы по категориям" />
         <${DonutChart} data=${pieData} colors=${COLORS} />
-        <div style=${{ display: "flex", flexWrap: "wrap", gap: "6px 14px", marginTop: 16, justifyContent: "center" }}>
-          ${pieData.map(function(d, i) {
-            return html`<div key=${d.name} style=${{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, color: "#4a3728" }}>
-              <div style=${{ width: 10, height: 10, borderRadius: 3, flexShrink: 0, background: COLORS[i % COLORS.length] }} />
-              <span style=${{ whiteSpace: "nowrap" }}>${d.name}: ${fmtMoney(d.value)}</span>
-            </div>`;
+        <div style=${{ marginTop: 16 }}>
+          ${d.expenses.filter(function(e) { return e.spent; }).map(function(e) {
+            return html`<${ProgressBar} key=${e.name} name=${e.name} spent=${Math.abs(e.spent)} budget=${e.budget ? Math.abs(e.budget) : 0} diff=${e.diff} />`;
           })}
         </div>
       </div>`}
+
+      <!-- Income -->
+      ${d.income.length > 0 && html`<div style=${S.card}>
+        <${SectionTitle} icon="💰" text="Доходы" />
+        ${d.income.filter(function(i) { return i.amount; }).map(function(i) {
+          return html`<div key=${i.name} style=${{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid rgba(184,169,201,.08)" }}>
+            <span style=${{ fontSize: 13, color: "#4a3728" }}>${i.name}</span>
+            <span style=${{ fontSize: 13, fontWeight: 700, color: "#5a9e76" }}>${fmtMoney(i.amount)}</span>
+          </div>`;
+        })}
+      </div>`}
+
+      <!-- Wallet accounts -->
+      ${d.wallet.length > 0 && html`<div style=${S.card}>
+        <${SectionTitle} icon="👛" text="Кошелёк" />
+        ${d.wallet.map(function(a) { return html`<${AccountRow} key=${a.name} ...${a} />`; })}
+      </div>`}
+
+      <!-- Debts -->
+      ${d.debts.length > 0 && html`<div style=${S.card}>
+        <${SectionTitle} icon="💳" text="Долги" />
+        ${d.debts.map(function(a) { return html`<${DebtRow} key=${a.name} ...${a} />`; })}
+      </div>`}
+
     </div>`;
   }
 
@@ -566,43 +651,103 @@ if ("serviceWorker" in navigator) {
     var _tab = useState("entry"), tab = _tab[0], setTab = _tab[1];
     var _refs = useState(null), refs = _refs[0], setRefs = _refs[1];
     var _history = useState([]), history = _history[0], setHistory = _history[1];
+    var _analytics = useState(null), analytics = _analytics[0], setAnalytics = _analytics[1];
     var _toast = useState(null), toast = _toast[0], setToast = _toast[1];
     var _loading = useState(false), loading = _loading[0], setLoading = _loading[1];
     var _refreshing = useState(false), refreshing = _refreshing[0], setRefreshing = _refreshing[1];
 
     var connected = !!auth.token;
 
+    function parseNum(s) {
+      if (!s) return 0;
+      return parseFloat(String(s).replace(/\s/g, "").replace(",", ".")) || 0;
+    }
+
     function loadData(silent) {
       if (!silent) setLoading(true);
       setRefreshing(true);
       return Promise.all([
+        // refs
         sheetsGet("Справочник!A4:A100"),
         sheetsGet("Справочник!B4:B100"),
         sheetsGet("Справочник!C4:C100"),
-      ]).then(function(results) {
+        // transactions
+        sheetsGet("Транзакции!B14:F500"),
+        sheetsGet("Транзакции!H14:L500"),
+        // analytics: wallet
+        sheetsGet("Сводка счетов!A4:D22"),
+        // analytics: debts
+        sheetsGet("Сводка счетов!G4:L22"),
+        // analytics: expenses
+        sheetsGet("Сводка счетов!A25:E42"),
+        // analytics: income
+        sheetsGet("Сводка счетов!G25:I42"),
+        // analytics: totals
+        sheetsGet("Сводка счетов!C48:D51"),
+        // analytics: changes
+        sheetsGet("Сводка счетов!G46:I46"),
+      ]).then(function(r) {
+        // refs
         setRefs({
-          accounts: results[0].flat().filter(Boolean),
-          expenseCats: results[1].flat().filter(Boolean),
-          incomeCats: results[2].flat().filter(Boolean),
+          accounts: r[0].flat().filter(Boolean),
+          expenseCats: r[1].flat().filter(Boolean),
+          incomeCats: r[2].flat().filter(Boolean),
         });
-        return Promise.all([
-          sheetsGet("Транзакции!B14:F500"),
-          sheetsGet("Транзакции!H14:L500"),
-        ]);
-      }).then(function(results) {
+
+        // transactions
         var merged = [];
-        results[0].forEach(function(r) {
-          if (!r[0]) return;
-          merged.push({ date: parseRuDate(r[0]), amount: -Math.abs(parseFloat((r[1] || "0").replace(/\s/g, "").replace(",", "."))),
-            account: (r[2] || "").trim(), note: (r[3] || "").trim(), cat: (r[4] || "").trim() });
+        r[3].forEach(function(row) {
+          if (!row[0]) return;
+          merged.push({ date: parseRuDate(row[0]), amount: -Math.abs(parseNum(row[1])),
+            account: (row[2] || "").trim(), note: (row[3] || "").trim(), cat: (row[4] || "").trim() });
         });
-        results[1].forEach(function(r) {
-          if (!r[0]) return;
-          merged.push({ date: parseRuDate(r[0]), amount: Math.abs(parseFloat((r[1] || "0").replace(/\s/g, "").replace(",", "."))),
-            account: (r[2] || "").trim(), note: (r[3] || "").trim(), cat: (r[4] || "").trim() });
+        r[4].forEach(function(row) {
+          if (!row[0]) return;
+          merged.push({ date: parseRuDate(row[0]), amount: Math.abs(parseNum(row[1])),
+            account: (row[2] || "").trim(), note: (row[3] || "").trim(), cat: (row[4] || "").trim() });
         });
         merged.sort(function(a, b) { return (b.date || "").localeCompare(a.date || ""); });
         setHistory(merged);
+
+        // analytics: wallet (A=name, B=skip, C=now, D=start)
+        var wallet = r[5].filter(function(row) { return row[0]; }).map(function(row) {
+          return { name: row[0].trim(), now: parseNum(row[2]), start: parseNum(row[3]) };
+        });
+
+        // analytics: debts (G=name, H=skip, I=now, J=start, K=plan, L=actual)
+        var debts = r[6].filter(function(row) { return row[0]; }).map(function(row) {
+          return { name: row[0].trim(), now: parseNum(row[2]), start: parseNum(row[3]), plan: parseNum(row[4]), actual: parseNum(row[5]) };
+        });
+
+        // analytics: expenses (A=name, B=skip, C=spent, D=budget, E=diff)
+        var expenses = r[7].filter(function(row) { return row[0]; }).map(function(row) {
+          return { name: row[0].trim(), spent: parseNum(row[2]), budget: parseNum(row[3]), diff: parseNum(row[4]) };
+        });
+
+        // analytics: income (G=name, H=skip, I=amount)
+        var income = r[8].filter(function(row) { return row[0]; }).map(function(row) {
+          return { name: row[0].trim(), amount: parseNum(row[2]) };
+        });
+
+        // totals: C48=moneyStart, D48=moneyNow, C51=debtStart, D51=debtNow
+        var totalsRaw = r[9];
+        var moneyStart = totalsRaw[0] ? parseNum(totalsRaw[0][0]) : 0;
+        var moneyNow = totalsRaw[0] ? parseNum(totalsRaw[0][1]) : 0;
+        var debtStart = totalsRaw[3] ? parseNum(totalsRaw[3][0]) : 0;
+        var debtNow = totalsRaw[3] ? parseNum(totalsRaw[3][1]) : 0;
+
+        // changes: G46=walletChange, I46=debtChange
+        var changesRaw = r[10];
+        var walletChange = changesRaw[0] ? parseNum(changesRaw[0][0]) : 0;
+        var debtChange = changesRaw[0] ? parseNum(changesRaw[0][2]) : 0;
+
+        setAnalytics({
+          wallet: wallet, debts: debts, expenses: expenses, income: income,
+          moneyStart: moneyStart, moneyNow: moneyNow,
+          debtStart: debtStart, debtNow: debtNow,
+          walletChange: walletChange, debtChange: debtChange,
+        });
+
         if (silent) setToast({ msg: "Данные обновлены", type: "ok" });
       }).catch(function(e) {
         setToast({ msg: "Ошибка: " + e.message, type: "err" });
@@ -655,7 +800,7 @@ if ("serviceWorker" in navigator) {
                     ? html`<${React.Fragment}>
                         ${tab === "entry" && html`<${EntryForm} refs=${refs} onSubmit=${handleSubmit} />`}
                         ${tab === "history" && html`<${HistoryList} items=${history} />`}
-                        ${tab === "analytics" && html`<${AnalyticsScreen} items=${history} />`}
+                        ${tab === "analytics" && analytics && html`<${AnalyticsScreen} data=${analytics} />`}
                       <//>`
                     : null}
               </div>
